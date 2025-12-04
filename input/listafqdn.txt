@@ -1,0 +1,5 @@
+www.bndes.gov.br,200.244.52.94,201.18.18.94
+www.cartaobndes.gov.br,200.244.52.26,201.18.18.26
+web.bndes.gov.br,201.18.18.94,200.244.52.94
+sistemas.bndes.gov.br,200.244.52.28,201.18.18.28
+cobrancanet.bndes.gov.br,200.244.52.27,201.18.18.27
