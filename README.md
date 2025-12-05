@@ -31,7 +31,7 @@ $ uv run python cli.py discovery -r 200
 
 $ uv run python cli.py monitor -p 200 -t 1.5 -l 1.5
 
-### Se desejar também pode instalar o aplicativo seguindos os passos abaixo
+### Se desejar também pode instalar o aplicativo seguindo os passos abaixo
 
 $ uv tool install .  
 
