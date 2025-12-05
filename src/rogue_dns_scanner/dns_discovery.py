@@ -14,7 +14,7 @@ def obter_dir_saida():
 
     A função tenta identificar a raiz do projeto a partir da localização do
     arquivo atual (`__file__`). Caso o script esteja sendo executado de uma
-    forma em que `__file__` não esteja disponível (por exemplo, execução direta
+    forma em que `__file__` não esteja disponível (por exemplo, ecd xecução direta
     em certos ambientes interativos), a raiz é inferida a partir do diretório
     de trabalho atual.
 

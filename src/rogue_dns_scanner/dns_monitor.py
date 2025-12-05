@@ -1,9 +1,9 @@
 # coding: utf-8
-# Coleta de Servidores DNS
+# Monitora Servidores DNS
 
+from pathlib import Path
 import dns.resolver
 import dns.exception
-import dns.query
 import threading
 import requests
 import Queue
@@ -27,21 +27,106 @@ fila_ips_dns = Queue.Queue()
 lock = threading.Lock()
 
 enviou_email = False
-diretorio_resultados = 'Resultado Consultas\\' + str(date.today()) + '\\'
+# diretorio_resultados = obter_dir_resultados()
+
+
+def obter_dir_resultados():
+    """
+    Retorna o diretório de entrada onde estão a lista de ip relativa a servidores DNS.
+
+    A função tenta identificar a raiz do projeto a partir da localização do
+    arquivo atual (`__file__`). Caso o script esteja sendo executado de uma
+    forma em que `__file__` não esteja disponível (por exemplo, ecd xecução direta
+    em certos ambientes interativos), a raiz é inferida a partir do diretório
+    de trabalho atual.
+
+    Em seguida, cria (se ainda não existir) um diretório chamado
+    ``input`` na raiz do projeto e retorna o caminho completo para ele.
+
+    Returns:
+        pathlib.Path: Caminho para o diretório ``input`` na raiz do projeto.
+    """
+
+    try:
+        script_caminho = Path(__file__).resolve()
+        raiz_projeto = script_caminho.parent.parent.parent
+    except NameError:
+        raiz_projeto = Path.cwd().parent.parent
+
+
+    diretorio_entrada = raiz_projeto / "result_monitor" 
+    diretorio_entrada.mkdir(exist_ok=True)
+
+    diretorio_resultados_dia = diretorio_entrada / str(date.today()) 
+    diretorio_resultados_dia.mkdir(exist_ok=True)
+
+    return diretorio_resultados_dia
+
+
+def obter_dir_entrada():
+    """
+    Retorna o diretório de entrada onde estão a lista de ip relativa a servidores DNS.
+
+    A função tenta identificar a raiz do projeto a partir da localização do
+    arquivo atual (`__file__`). Caso o script esteja sendo executado de uma
+    forma em que `__file__` não esteja disponível (por exemplo, ecd xecução direta
+    em certos ambientes interativos), a raiz é inferida a partir do diretório
+    de trabalho atual.
+
+    Em seguida, cria (se ainda não existir) um diretório chamado
+    ``input`` na raiz do projeto e retorna o caminho completo para ele.
+
+    Returns:
+        pathlib.Path: Caminho para o diretório ``input`` na raiz do projeto.
+    """
+
+    try:
+        script_caminho = Path(__file__).resolve()
+        raiz_projeto = script_caminho.parent.parent.parent
+    except NameError:
+        raiz_projeto = Path.cwd().parent.parent
+
+
+    diretorio_entrada = raiz_projeto / "input"
+    diretorio_entrada.mkdir(exist_ok=True)
+
+    return diretorio_entrada
 
 
 def gerencia_verificacao(total_thread, dns_timeout, dns_lifetime):
+    """
+    Gerencia a criação e execução das threads responsáveis pelo processo de
+    verificação DNS.
+
+    Esta função inicializa o ambiente necessário para o scanner, determina o
+    total de endereços que serão processados, inicia uma thread dedicada para
+    verificação de acesso à internet e, em seguida, cria múltiplas threads para
+    execução paralela das consultas DNS.
+
+    Args:
+        total_thread (int): Número de threads de trabalho que serão criadas para
+            processar verificações DNS em paralelo.
+        dns_timeout (int): Tempo máximo de espera (em segundos) para cada
+            consulta DNS.
+        dns_lifetime (int): Tempo total de vida permitido (em segundos) para
+            uma consulta DNS antes de ser descartada.
+
+    Globals:
+        total_ip_dns (int): Variável global definida a partir do total de itens
+            presentes na fila de endereços a serem verificados.
+
+    Returns:
+        int: Retorna sempre 0 ao final da inicialização das threads.
+    """
+    
     global total_ip_dns
-    global diretorio_resultados
 
     # Cria diretorio de trabalho
-    if not os.path.exists(diretorio_resultados):
-        os.makedirs(diretorio_resultados)
+    dir_entrada = obter_dir_entrada()
 
     # Define o total de  threads de trabalho
     tamanho_fila = popula_fila()
     total_ip_dns = tamanho_fila
-    total_thread = total_thread
     contador_thread = 0
 
     t1 = threading.Thread(
@@ -64,16 +149,14 @@ def popula_fila():
     global fila_ips_dns
     fila_ips_dns = Queue.Queue()
 
-# Para cada linha no arquivo de DNS exclui o caracter de quebra de linha e
-# adiciona o ip em uma lista
-    with open('arquivos para consutas\\lista_ip_dns_refinada.txt', 'r') as f:
+    # Para cada linha no arquivo de DNS exclui o caracter de quebra de linha e
+    # adiciona o ip em uma lista
+    
+    diretorio_entrada = obter_dir_entrada()
+    nome_arquivo =  diretorio_entrada / "lista_ip_dns.txt"
+    
+    with open(nome_arquivo, 'r') as f:
         dns_ips = [ ip.rstrip('\n') for ip in f ]
-
-    # arquivo_dns_ips = open(
-    #                         'D:\\projetos_python\\coletaDNS\\arquivos para consutas\\lista_ip_dns_refinada.txt', 'r')
-
-    # dns_ips = [ip.rstrip('\n') for ip in arquivo_dns_ips]
-    # arquivo_dns_ips.close()
 
     # Para cada item da lista adiciona-o na fila.
     for ip in dns_ips:
@@ -93,7 +176,10 @@ def verifica_servidores_dns(dns_timeout, dns_lifetime):
 
     # Obtém os FQDNs e seus respectivos de um arquivo e adicona-os em uma
     # lista.
-    with open('arquivos para consutas\\listafqdn.txt', 'r') as f:
+    diretorio_entrada = obter_dir_entrada()
+    nome_arquivo =  diretorio_entrada / "listafqdn.txt"
+
+    with open(nome_arquivo, 'r') as f:
         fqdn_ips = [ip.rstrip('\n') for ip in f]
 
     # Definição do objeto resolver e tempos relativos a consulta
@@ -110,7 +196,7 @@ def verifica_servidores_dns(dns_timeout, dns_lifetime):
             fila_ips_dns.task_done()
         except Queue.Empty:
             lock.acquire()
-            print "Aguarde 1 minuto para todas as threads serem encerradas adequadamente"
+            print ("Aguarde 1 minuto para todas as threads serem encerradas adequadamente")
             # Envia e-mail informando o encerramento do processo de verificação
             if not enviou_email:
                 envia_email()
@@ -188,8 +274,9 @@ def baixa_evidencia_site(ip, fqdn, lock):
         except requests.HTTPError:
             return
 
-        if resposta.status_code == requests.codes.ok:
-            with open(diretorio_resultados + str(ip) + '-' + str(fqdn) + '.html', 'w') as f:
+        if resposta.status_code == requests.codes.ok:            
+            nome_arquivo =  diretorio_resultados() / f"{str(ip)} - {str(fqdn)} + .html"
+            with open(nome_arquivo, 'w') as f:
                 f.write(resposta.content)
 
 
@@ -238,8 +325,6 @@ def grava_arquivo_resultado_consulta(ip, texto, lock):
     lock.release()
 
 # Utilizado para fazer log de erros de conexão
-
-
 def grava_arquivo_status_internet(texto):
     global diretorio_resultados
     data_hora = str(datetime.now())
@@ -249,8 +334,6 @@ def grava_arquivo_status_internet(texto):
         f.write(data_hora + '-' + texto + '\n')
 
 # Gera um arquivo para cada fqdn pesquisado, caso encontre DNS forjado
-
-
 def grava_informacoes_dns(ip_definido, fqdn, resposta, lock):
     global diretorio_resultados
 
@@ -316,14 +399,17 @@ def envia_email():
         server.sendmail(FROM, TO, message)
         # server.quit()
         server.close()
-        print 'Mensagem enviada com sucesso'
+        print ('Mensagem enviada com sucesso')
     except:
-        print "Falha no envio do e-mail"
+        print ("Falha no envio do e-mail")
 
 
 def verifica_excecao(ip_resposta_query):
 
-    with open('D:\\projetos_python\\coletaDNS\\arquivos para consutas\\ips_excepcionalizar.txt', 'r') as f:
+    diretorio_entrada = obter_dir_entrada()
+    nome_arquivo =  diretorio_entrada / "ips_excepcionalizar.txt"
+
+    with open(nome_arquivo, 'r') as f:
         ips_excepcionalizar = [ ip.rstrip('\n') for ip in f ]
 
     if ip_resposta_query in ips_excepcionalizar:
