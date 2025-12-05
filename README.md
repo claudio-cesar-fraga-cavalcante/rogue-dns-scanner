@@ -16,15 +16,19 @@ $ cd rogue_dns_scanner
 Este projeto utiliza o uv, um gerenciador de ambientes Python rápido e moderno.
 
 **Linux / MACOS:**  
+
 $ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 **Windows (Power Shell)**  
+
 $ iwr https://astral.sh/uv/install.ps1 -useb | iex
 
 ### Executar o Discovery
+
 $ uv run python cli.py discovery -r 200
 
 ### Executar o Monitor
+
 $ uv run python cli.py monitor -p 200 -t 1.5 -l 1.5
 
 ### Se desejar também pode instalar o aplicativo seguindos os passos abaixo

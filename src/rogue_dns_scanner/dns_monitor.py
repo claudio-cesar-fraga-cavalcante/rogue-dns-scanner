@@ -439,7 +439,6 @@ def grava_informacoes_dns(ip_definido, fqdn, resposta, lock):
                 f.write(linha)
 
 def prepara_mensagem_email():
-    global diretorio_resultados
     mensagem = 'DNS_IP - FQDN_QUERY - RESPOSTA - OBS \n'
 
     # Prepara o conteúdo da mensagem a ser enviada
@@ -461,10 +460,10 @@ def prepara_mensagem_email():
 def envia_email():
     import smtplib
 
-    gmail_user = "xxxxx@gmail.com"
-    gmail_pwd = "xxxxx@123"
-    FROM = 'xxxxxx@gmail.com'
-    TO = ['xxxxxxxx@gmail.com']  # must be a list
+    gmail_user = "alteraaqui@gmail.com"
+    gmail_pwd = "alteraaqui@123" # Não comitar a senha em nenhum repositório
+    FROM = 'alteraraqui@gmail.com'
+    TO = ['alteraraqui@gmail.com']  # must be a list
     SUBJECT = "Resultado do processo de verificação DNS"
     TEXT = prepara_mensagem_email()
 
