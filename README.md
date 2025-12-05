@@ -42,5 +42,5 @@ $ rogue-dns monitor -p 200 -t 1.5 -l 1.5
 
 
 *Para mais detalhes verifique a documentação completa na Wiki*:  
-https://github.com/claudio-cesar-fraga-cavalcante/rogue-dns-scanner/wiki
+https://github.com/claudio-cesar-fraga-cavalcante/rogue-dns-scanner/wiki/Rogue-DNS-Scanner  
 
