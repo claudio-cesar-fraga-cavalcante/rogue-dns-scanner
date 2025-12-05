@@ -6,11 +6,10 @@ import dns.resolver
 import dns.exception
 import threading
 import requests
-import Queue
+import queue
 import time
 from datetime import date
 from datetime import datetime
-import os
 import glob
 import argparse
 
@@ -23,11 +22,13 @@ contador_status_conexao = 0
 
 # Fila IP possui todos os ips de servidores DNS que serão consultados
 # durante o processo de verificação
-fila_ips_dns = Queue.Queue()
+fila_ips_dns = queue.Queue()
 lock = threading.Lock()
 
 enviou_email = False
-# diretorio_resultados = obter_dir_resultados()
+
+DIR_RESULTADOS = None
+DIR_ENTRADA = None
 
 
 def obter_dir_resultados():
@@ -121,9 +122,6 @@ def gerencia_verificacao(total_thread, dns_timeout, dns_lifetime):
     
     global total_ip_dns
 
-    # Cria diretorio de trabalho
-    dir_entrada = obter_dir_entrada()
-
     # Define o total de  threads de trabalho
     tamanho_fila = popula_fila()
     total_ip_dns = tamanho_fila
@@ -143,22 +141,29 @@ def gerencia_verificacao(total_thread, dns_timeout, dns_lifetime):
 
 
 def popula_fila():
-    # Responsável por adicionar em uma fila todos os ips de servidores DNS que estão em um arquivo.
-    # A fila está sendo utilizada pois o processo será realizado por threads.
+    """
+    Carrega uma lista de endereços IP de servidores DNS a partir de um arquivo
+    e os insere em uma fila global utilizada por threads.
 
+    A função:
+        1. Inicializa a fila global ``fila_ips_dns``.
+        2. Localiza o arquivo ``lista_ip_dns.txt`` no diretório de entrada
+           (obtido via ``obter_dir_entrada()``).
+        3. Lê cada linha do arquivo, removendo quebras de linha.
+        4. Insere cada IP lido na fila.
+        5. Retorna a quantidade total de IPs carregados.
+
+    Returns:
+        int: Quantidade de IPs inseridos na fila.
+    """
     global fila_ips_dns
-    fila_ips_dns = Queue.Queue()
-
-    # Para cada linha no arquivo de DNS exclui o caracter de quebra de linha e
-    # adiciona o ip em uma lista
-    
-    diretorio_entrada = obter_dir_entrada()
-    nome_arquivo =  diretorio_entrada / "lista_ip_dns.txt"
+    fila_ips_dns = queue.Queue()
+   
+    nome_arquivo =  DIR_ENTRADA / "lista_ip_dns.txt"
     
     with open(nome_arquivo, 'r') as f:
         dns_ips = [ ip.rstrip('\n') for ip in f ]
 
-    # Para cada item da lista adiciona-o na fila.
     for ip in dns_ips:
         fila_ips_dns.put(ip)
 
@@ -166,23 +171,58 @@ def popula_fila():
 
 
 def verifica_servidores_dns(dns_timeout, dns_lifetime):
+    """
+    Realiza consultas DNS em todos os servidores presentes na fila, verificando
+    se algum deles retorna endereços IP divergentes dos IPs legítimos associados
+    aos FQDNs monitorados.
+
+    A função:
+        - Carrega a relação de FQDNs e seus IPs legítimos a partir do arquivo
+          ``listafqdn.txt``.
+        - Configura um resolvedor DNS com os valores de timeout e lifetime
+          informados.
+        - Consome continuamente a fila de servidores DNS, processando cada IP por
+          meio de threads.
+        - Para cada servidor DNS, consulta todos os FQDNs definidos e compara
+          os IPs retornados com os IPs legítimos.
+        - Registra evidências e grava resultados caso sejam identificados IPs
+          potencialmente forjados.
+        - Trata erros comuns de resolução (NXDOMAIN, Timeout, NoNameservers,
+          DNSException), registrando códigos específicos em arquivo.
+        - Encerra quando a fila estiver vazia ou quando houver problemas
+          persistentes de conectividade.
+
+    Args:
+        dns_timeout (int):
+            Tempo máximo, em segundos, que cada consulta DNS pode aguardar antes
+            de disparar timeout.
+        dns_lifetime (int):
+            Tempo máximo total permitido para a resolução DNS.
+
+    Returns:
+        int:
+            - ``1`` quando todas as threads terminam e a fila de servidores DNS
+              é esvaziada com sucesso.
+            - ``-1`` quando o processo é interrompido devido a falhas recorrentes
+              de conectividade com a Internet.
+
+    Raises:
+        None: todas as exceções relevantes são tratadas internamente.
+    """
     # Esta função realiza o principal trabalho do script. Que consiste em realizar queries em todos os servidores
     # DNS. O objetivo é verificar se algum servidor DNS possui o endereço IP
     # forjado para um FQDN analisado
+
     global lock
     global registros_verificados
     global contador_status_conexao
     global enviou_email
 
-    # Obtém os FQDNs e seus respectivos de um arquivo e adicona-os em uma
-    # lista.
-    diretorio_entrada = obter_dir_entrada()
-    nome_arquivo =  diretorio_entrada / "listafqdn.txt"
+    nome_arquivo =  DIR_ENTRADA / "listafqdn.txt"
 
     with open(nome_arquivo, 'r') as f:
         fqdn_ips = [ip.rstrip('\n') for ip in f]
 
-    # Definição do objeto resolver e tempos relativos a consulta
     conf_dns = dns.resolver.Resolver()
     conf_dns.timeout = dns_timeout
     conf_dns.lifetime = dns_lifetime
@@ -194,7 +234,7 @@ def verifica_servidores_dns(dns_timeout, dns_lifetime):
             # o parâmetro false é utilizado para a thread não bloquear
             ip_dns = (fila_ips_dns.get(False))
             fila_ips_dns.task_done()
-        except Queue.Empty:
+        except queue.Empty:
             lock.acquire()
             print ("Aguarde 1 minuto para todas as threads serem encerradas adequadamente")
             # Envia e-mail informando o encerramento do processo de verificação
@@ -209,14 +249,13 @@ def verifica_servidores_dns(dns_timeout, dns_lifetime):
         if contador_status_conexao >= 5:
             return -1
 
-        lock.acquire()
-        # Exibe o andamento do processo de validação
-        registros_verificados += 1
-        andamento_verificacao = int(
-            registros_verificados / float(total_ip_dns) * 100)
-        print ('Andamento: ' + str(registros_verificados) + ' de: ' + str(total_ip_dns)
-               + '---' + str(andamento_verificacao) + '%')
-        lock.release()
+        with lock:
+            # Exibe o andamento do processo de validação
+            registros_verificados += 1
+            andamento_verificacao = int(
+                registros_verificados / float(total_ip_dns) * 100)
+            print ('Andamento: ' + str(registros_verificados) + ' de: ' + str(total_ip_dns)
+                + '---' + str(andamento_verificacao) + '%')
 
         # Transforma ips dos FQDNs em um conjunto (set) que será utilizado para validar
         # se existem servidores DNS com ips forjados para os FQDNs consultados.
@@ -228,9 +267,8 @@ def verifica_servidores_dns(dns_timeout, dns_lifetime):
             conjunto_ip_fqdn_definido = set(str(linha_fqdn).split(',')[1:])
 
             try:
-                # Define o servidor que será consultado e realiza a consulta
                 conf_dns.nameservers = [ip_dns]
-                resposta = conf_dns.query(fqdn_definido, 'A')
+                resposta = conf_dns.resolve(fqdn_definido, 'A')
                 # Transforma a resposta em uma lista e depois em um conjunto
                 ips_resposta = ["".join(str(i).split(':')) for i in resposta]
                 conjunto_ips_reposta = set(ips_resposta)
@@ -241,26 +279,49 @@ def verifica_servidores_dns(dns_timeout, dns_lifetime):
                 # Verifica se a reposta contém registros possivelmente maliciosos
                 # Em caso positivo grava o resultado e obtém o artefato (site)
                 if resultado_verificacao_consulta_dns:
-                    baixa_evidencia_site(list(ips_resposta)[0], fqdn_definido, lock)
+                    baixa_evidencia_site(list(ips_resposta)[0], fqdn_definido)
                     grava_informacoes_dns(ip_dns, fqdn_definido, ips_resposta, lock)
             except dns.resolver.NXDOMAIN:
-                # NXDOMAIN = 10
                 grava_arquivo_resultado_consulta(ip_dns, '10', lock)
             except dns.resolver.Timeout:
-                # TIMEOUT = 20
                 grava_arquivo_resultado_consulta(ip_dns, '20', lock)
                 break
             except dns.resolver.NoNameservers:
-                # NONAMESERVERS = 30
                 grava_arquivo_resultado_consulta(ip_dns, '30', lock)
             except dns.exception.DNSException:
-                # OUTROSERROS= 40
                 grava_arquivo_resultado_consulta(ip_dns, '40', lock)
 
 
-def baixa_evidencia_site(ip, fqdn, lock):
-    global diretorio_resultados
-    
+def baixa_evidencia_site(ip, fqdn):
+    """
+    Realiza uma requisição HTTP ao endereço IP informado utilizando o FQDN como
+    cabeçalho *Host*, com o objetivo de coletar uma evidência (conteúdo HTML)
+    que possa indicar comportamento suspeito ou forjado em servidores DNS.
+
+    A função:
+        - Ignora o processamento caso o IP esteja em uma lista de exceções.
+        - Envia uma requisição HTTP para o IP, simulando acesso ao FQDN.
+        - Trata erros de conexão ou HTTP.
+        - Caso a resposta seja bem-sucedida (status 200), salva o conteúdo HTML
+          retornado no diretório de resultados.
+
+    Args:
+        ip (str):
+            Endereço IP retornado pelo servidor DNS que será acessado via HTTP.
+        fqdn (str):
+            Nome de domínio totalmente qualificado (FQDN) utilizado como
+            cabeçalho *Host* na requisição HTTP.
+
+    Returns:
+        None:
+            A função não retorna valores. O conteúdo da página é salvo em arquivo
+            somente quando a requisição obtém sucesso.
+
+    Raises:
+        None:
+            Exceções comuns de conexão são tratadas internamente.
+    """
+
     if verifica_excecao(str(ip)):
         return
     else:
@@ -275,12 +336,45 @@ def baixa_evidencia_site(ip, fqdn, lock):
             return
 
         if resposta.status_code == requests.codes.ok:            
-            nome_arquivo =  diretorio_resultados() / f"{str(ip)} - {str(fqdn)} + .html"
-            with open(nome_arquivo, 'w') as f:
+            nome_arquivo =  DIR_RESULTADOS / f"{str(ip)} - {str(fqdn)}.html"
+            with open(nome_arquivo, 'wb') as f:
                 f.write(resposta.content)
 
 
 def verifica_acesso_internet():
+    """
+    Monitora periodicamente a conectividade com a Internet durante a execução
+    do processo, registrando falhas e controlando o estado geral de conexão.
+
+    A função realiza:
+        - Tentativas periódicas de acesso a uma URL de referência (Google).
+        - Registro de falhas de conexão em arquivo.
+        - Incremento/decremento de um contador global que indica estabilidade
+          da conexão.
+        - Encerramento automático quando a fila de servidores DNS for esvaziada.
+        - Interrupção do processo caso sejam detectadas falhas consecutivas
+          acima do limite permitido.
+
+    Comportamento:
+        - Se a fila de IPs a serem consultados estiver vazia, a thread encerra.
+        - Cada falha de conexão incrementa o contador `contador_status_conexao`.
+        - Cada conexão bem-sucedida decrementa o contador, até o mínimo de zero.
+        - Se o contador atingir 5 falhas consecutivas, retorna `-1` indicando
+          condição crítica de acesso à Internet.
+
+    Args:
+        None
+
+    Returns:
+        int:
+            1  — quando a fila de servidores DNS esvaziou e a thread deve encerrar.
+            -1 — quando o número de falhas consecutivas na conexão atingir o limite.
+
+    Raises:
+        None:
+            Todas as exceções de rede são tratadas internamente.
+    """
+
     global contador_status_conexao
     global fila_ips_dns
     url = 'http://www.google.com.br'
@@ -314,55 +408,43 @@ def verifica_acesso_internet():
 
 
 def grava_arquivo_resultado_consulta(ip, texto, lock):
-    global diretorio_resultados
 
     data_hora = str(datetime.now())
-    nome_arquivo = diretorio_resultados + \
-        str(date.today()) + '-' + 'resultado_consulta_dns.txt'
-    lock.acquire()
-    with open(nome_arquivo, 'a+') as f:
-        f.write(data_hora + ',' + str(ip) + ',' + texto + '\n')
-    lock.release()
+    nome_arquivo =  DIR_RESULTADOS / f"{date.today()} - resultado_consulta_dns.txt"
+    
+    with lock:
+        with open(nome_arquivo, 'a') as f:
+            f.write(f"{data_hora},{ip},{texto}\n")    
 
 # Utilizado para fazer log de erros de conexão
 def grava_arquivo_status_internet(texto):
-    global diretorio_resultados
     data_hora = str(datetime.now())
-    nome_arquivo = diretorio_resultados + \
-        str(date.today()) + '-' + 'status_conexao.txt'
-    with open(nome_arquivo, 'a+') as f:
-        f.write(data_hora + '-' + texto + '\n')
+
+    nome_arquivo =  DIR_RESULTADOS / f"{date.today()} - status_conexao.txt"
+
+    with open(nome_arquivo, 'a') as f:
+        f.write(f"{data_hora} - {texto}\n")
 
 # Gera um arquivo para cada fqdn pesquisado, caso encontre DNS forjado
 def grava_informacoes_dns(ip_definido, fqdn, resposta, lock):
-    global diretorio_resultados
 
     if verifica_excecao(str(resposta[0])):
         return
     else:
-        lock.acquire()
-        nome_arquivo = diretorio_resultados + \
-            str(date.today()) + '-' + str(fqdn) + \
-            '-' + 'resultado_validacao_dns.txt'
-
-        with open(nome_arquivo, 'a+') as f:
-            f.writelines(ip_definido)
-            f.writelines(",")
-            f.writelines(fqdn)
-            f.writelines(",")
-            f.writelines(",".join(resposta[0:]))
-            f.writelines("\n")
-
-        lock.release()
-
+        with lock:
+            nome_arquivo =  DIR_RESULTADOS / f"{date.today()} - {str(fqdn)}  - resultado_validacao_dns.txt"
+            
+            linha = f"{ip_definido},{fqdn},{','.join(resposta)}\n"
+            with open(nome_arquivo, 'a') as f:
+                f.write(linha)
 
 def prepara_mensagem_email():
     global diretorio_resultados
     mensagem = 'DNS_IP - FQDN_QUERY - RESPOSTA - OBS \n'
 
     # Prepara o conteúdo da mensagem a ser enviada
-    lista_arquivos = glob.glob(
-        diretorio_resultados + str('\\*resultado_validacao_dns.txt'))
+    lista_arquivos = glob.glob(DIR_RESULTADOS /  "'*resultado_validacao_dns.txt")
+    
     for arquivo in lista_arquivos:
         with open(arquivo, "r") as f:
             linhas = f.readlines()
@@ -387,10 +469,11 @@ def envia_email():
     TEXT = prepara_mensagem_email()
 
     # Prepare actual message
-    message = """\From: %s\nTo: %s\nSubject: %s\n\n%s
+    message = """From: %s\nTo: %s\nSubject: %s\n\n%s
     """ % (FROM, ", ".join(TO), SUBJECT, TEXT)
+
     try:
-        #server = smtplib.SMTP(SERVER)
+        # server = smtplib.SMTP(SERVER)
         # or port 465 doesn't seem to work!
         server = smtplib.SMTP("smtp.gmail.com", 587)
         server.ehlo()
@@ -406,8 +489,7 @@ def envia_email():
 
 def verifica_excecao(ip_resposta_query):
 
-    diretorio_entrada = obter_dir_entrada()
-    nome_arquivo =  diretorio_entrada / "ips_excepcionalizar.txt"
+    nome_arquivo =  DIR_ENTRADA / "ips_excepcionalizar.txt"
 
     with open(nome_arquivo, 'r') as f:
         ips_excepcionalizar = [ ip.rstrip('\n') for ip in f ]
@@ -417,24 +499,57 @@ def verifica_excecao(ip_resposta_query):
     else:
         return False
 
-
-def main():
-    parser = argparse.ArgumentParser(
-        description='Programa para verificar DNS forjados')
-    parser.add_argument('-p', '--thread', type=int, action='store', dest='quantidade_thread', default=100,
-                        required=False, help='Quantidade de threads que serão utilizadas no processo de validação')
-
-    parser.add_argument('-t', '--timeout', type=float, action='store', dest='timeout', required=False,
-                        default=2, help=' Tempo de timeout das consultas DNS')
-
-    parser.add_argument('-l', '--lifetime', type=float, action='store', dest='lifetime', required=False,
-                        default=2, help='Tempo de vida da tranferência das informações')
-
-    arguments = parser.parse_args()
-
-    gerencia_verificacao(
-        arguments.quantidade_thread, arguments.timeout, arguments.lifetime)
+def inicializar_dirs():
+    global DIR_RESULTADOS, DIR_ENTRADA
+    if DIR_RESULTADOS is None:
+        DIR_RESULTADOS = obter_dir_resultados()
+    if DIR_ENTRADA is None:
+        DIR_ENTRADA = obter_dir_entrada()
 
 
-if __name__ == "__main__":
-    main()
+def main_monitor(qtd_threads: int, timeout: float, lifetime: float):
+    inicializar_dirs()
+    gerencia_verificacao(qtd_threads, timeout, lifetime)
+
+# def main():
+#     """
+#     Ponto de entrada principal do programa.
+
+#     Esta função configura e interpreta os argumentos de linha de comando,
+#     permitindo ao usuário ajustar parâmetros de execução relacionados ao
+#     processo de verificação de DNS forjados. Após processar os argumentos,
+#     delega a execução para a função `gerencia_verificacao`, que conduz a
+#     lógica principal do programa.
+
+#     Args:
+#         Nenhum argumento é passado diretamente, porém são lidos três parâmetros
+#         via linha de comando:
+        
+#         - -p / --thread (int): Quantidade de threads utilizadas no processo de 
+#           validação. Valor padrão: 100.
+
+#         - -t / --timeout (float): Tempo de timeout para consultas DNS.
+#           Valor padrão: 2 segundos.
+
+#         - -l / --lifetime (float): Tempo máximo permitido para transferência
+#           de informações DNS. Valor padrão: 2 segundos.
+
+#     Returns:
+#         None: A função não retorna valores. Apenas inicia a execução geral do
+#         processo de verificação.
+#     """
+
+#     parser = argparse.ArgumentParser(description='Programa para verificar DNS forjados')
+
+#     parser.add_argument('-p', '--thread', type=int, action='store', dest='quantidade_thread', default=100,
+#                         required=False, help='Quantidade de threads que serão utilizadas no processo de validação')
+
+#     parser.add_argument('-t', '--timeout', type=float, action='store', dest='timeout', required=False,
+#                         default=2, help=' Tempo de timeout das consultas DNS')
+
+#     parser.add_argument('-l', '--lifetime', type=float, action='store', dest='lifetime', required=False,
+#                         default=2, help='Tempo de vida da tranferência das informações')
+
+#     arguments = parser.parse_args()
+
+#     gerencia_verificacao(arguments.quantidade_thread, arguments.timeout, arguments.lifetime)

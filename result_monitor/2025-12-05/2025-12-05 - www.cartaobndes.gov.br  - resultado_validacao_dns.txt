@@ -1,0 +1,4 @@
+139.0.5.154,www.cartaobndes.gov.br,1.1.1.1
+139.0.5.154,www.cartaobndes.gov.br,1.1.1.1
+14.136.86.110,www.cartaobndes.gov.br,1.1.1.1
+14.45.205.251,www.cartaobndes.gov.br,10.0.0.1

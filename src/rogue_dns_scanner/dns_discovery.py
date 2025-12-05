@@ -173,28 +173,15 @@ def grava_informacoes_dns(rede, ip_definido, resposta, lock):
         with open(nome_arquivo, "a", encoding="utf-8") as f:
             f.write(f"{ip_definido},{resposta}\n")
 
-def main():
-    """
-    Ponto de entrada do programa.
 
-    Faz o parse dos argumentos de linha de comando, obtém o valor da rede
-    informada pelo usuário e inicia o processo de varredura para identificação
-    de servidores DNS.
+# dns_discovery.py
+def main_discovery(rede: int):
+    coleta_servidores_dns(rede)
 
-    Args:
-        None: Os parâmetros são recebidos diretamente da linha de comando.
 
-    Returns:
-        None: Executa o fluxo principal do programa sem retornar valores.
-    """
+# def main():
 
-    parser = argparse.ArgumentParser(description='Programa para identificar servidores DNS na Internet')
-    parser.add_argument('-r', '--rede', type = int, action = 'store', dest = 'rede', default = 1,
-                        required = True, help = 'Rede a ser pesquisada')
-
-    arguments = parser.parse_args()
-    coleta_servidores_dns(arguments.rede)
 
 if __name__ == "__main__":
-    main()
+    main_discovery()
     

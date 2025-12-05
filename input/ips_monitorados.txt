@@ -1,4 +1,0 @@
-data_inclusao;tipo_registro;ip;qtd_verificacoes_realizar;qtd_verificacoes_realizadas;status;RT;data_ultima_verificacao
-2015-03-01;W;200.244.52.26;5;450;RENOTIFICAR-ID-90;3333333;2015-03-02 11:42:04.519566
-2015-03-01;D;2.115.228.89;5;450;RENOTIFICAR-ID-90;3333333;2015-03-02 11:42:04.874704
-2015-03-01;D;1.1.1.1;0;5;FECHADO-TAKEDOWN;00000;2015-03-01 22:26:07.612588
